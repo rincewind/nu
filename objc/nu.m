@@ -25,6 +25,7 @@ limitations under the License.
 #import "bridge.h"
 #import "class.h"
 #import "enumerable.h"
+#import "exception.h"
 #import <unistd.h>
 #import "pcre.h"
 
@@ -179,6 +180,15 @@ int NuMain(int argc, const char *argv[], const char *envp[])
         }
     }
     #ifdef DARWIN
+    @catch (NuException* nuexc) {
+        NSLog(@"Terminating due to uncaught exception (below):");
+        NSLog(@"%@: %@", [nuexc name], [nuexc reason]);
+        NuCell* current = [nuexc traceback];
+        while (current != Nu__null) {
+            NSLog(@"  %@(%@) in %@", [[current car] filename], [[current car] linenumber], [[current car] function]);
+            current = [current cdr];
+        }
+    }
     @catch (id exception)
         #else
         NS_HANDLER

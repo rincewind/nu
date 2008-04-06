@@ -24,6 +24,7 @@ limitations under the License.
 #import "object.h"
 #import "objc_runtime.h"
 
+@class NuException;
 @implementation NuCell
 
 + (id) cellWithCar:(id)car cdr:(id)cdr
@@ -196,7 +197,10 @@ extern char *nu_parsedFilename(int i);
 
 - (id) evalWithContext:(NSMutableDictionary *)context
 {
-    id value = [car evalWithContext:context];
+    id value;
+    @try {
+
+    value = [car evalWithContext:context];
 
     #ifdef DARWIN
     if (NU_LIST_EVAL_BEGIN_ENABLED()) {
@@ -221,6 +225,33 @@ extern char *nu_parsedFilename(int i);
     }
     #endif
     return result;
+    } @catch (NuException* nuexc) {
+        @throw [self addToException:nuexc value:value];
+    } @catch (NSException* exc) {
+        NuException* nuexc = [[NuException alloc] initWithName: [exc name] reason: [exc reason] userInfo: [exc userInfo]];
+        @throw [self addToException:nuexc value:value];
+    }
+}
+
+- (NuException *) addToException:(NuException *)exc value:(id)value {
+    NSString* nsfname;
+    NSString* nsfunct;
+    
+    char* fname = nu_parsedFilename(self->file);
+    
+    if (value) {
+        nsfunct = [value description];
+    } else {
+        nsfunct = @"n/a";
+    }
+    
+    if (fname) {
+        nsfname =  [NSString stringWithCString: fname encoding: NSUTF8StringEncoding];
+        [exc addFunction: nsfunct linenumber: [self line] filename: nsfname];
+
+    } else {
+        [exc addFunction: nsfunct linenumber: [self line]];        
+    }
 }
 
 - (id) each:(NuBlock *) block
