@@ -197,7 +197,7 @@ extern char *nu_parsedFilename(int i);
 
 - (id) evalWithContext:(NSMutableDictionary *)context
 {
-    id value;
+    id value = nil;
     @try {
 
     value = [car evalWithContext:context];

@@ -1,6 +1,6 @@
 /*!
 @file parser.m
-@description Nu source file parser.
+@Description Nu source file parser.
 @copyright Copyright (c) 2007 Neon Design Technology, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@ limitations under the License.
 #import "symbol.h"
 #import "extensions.h"
 #import "regex.h"
+#import "exception.h"
 
 #define PARSE_NORMAL     0
 #define PARSE_COMMENT    1
@@ -880,6 +881,15 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
                 progn = [[self parse:[NSString stringWithCString:line encoding:NSUTF8StringEncoding]] retain];
             }
             #ifdef DARWIN
+            @catch (NuException* nuexc) {
+                 NSLog(@"Terminating due to uncaught exception (below):");
+                 NSLog(@"%@: %@", [nuexc name], [nuexc reason]);
+                 NuCell* _current = [nuexc traceback];
+                 while (_current != Nu__null) {
+                     NSLog(@"  %@(%@) in %@", [[_current car] filename], [[_current car] linenumber], [[_current car] function]);
+                     _current = [_current cdr];
+                 }
+             }
             @catch (id exception)
                 #else
                 NS_HANDLER
@@ -913,7 +923,17 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
                             printf("%s\n", [[result stringValue] cStringUsingEncoding:NSUTF8StringEncoding]);
                         }
 #ifdef DARWIN
+            @catch (NuException* nuexc) {
+                 NSLog(@"Terminating due to uncaught exception (below):");
+                 NSLog(@"%@: %@", [nuexc name], [nuexc reason]);
+                 NuCell* _current = [nuexc traceback];
+                 while (_current != Nu__null) {
+                     NSLog(@"  %@(%@) in %@", [[_current car] filename], [[_current car] linenumber], [[_current car] function]);
+                     _current = [_current cdr];
+                 }
+             }
 @catch (id exception) 
+
 #else
                         NS_HANDLER
 #endif

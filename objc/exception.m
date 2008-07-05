@@ -74,7 +74,7 @@ limitations under the License.
 {
     self = [super init];
     filename = [filen retain];
-    linenumber = [NSNumber numberWithUnsignedInteger: line];
+    linenumber = [[NSNumber numberWithUnsignedInteger: line] retain];
     function = [funct retain];
     return self;
 }
