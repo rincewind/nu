@@ -21,8 +21,12 @@ limitations under the License.
 
 #import <objc/objc.h>
 #ifdef DARWIN
+#ifndef IPHONE
 #import <objc/objc-runtime.h>
 #import <objc/objc-class.h>
+#else
+#import <objc/runtime.h>
+#endif
 #endif
 
 /*!

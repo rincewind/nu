@@ -1,6 +1,6 @@
 /*!
 @file parser.m
-@Description Nu source file parser.
+@description Nu source file parser.
 @copyright Copyright (c) 2007 Neon Design Technology, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,8 +41,10 @@ extern const char *nu_parsedFilename(int i)
     return filenames[i];
 }
 
+#ifndef IPHONE
 #include <readline/readline.h>
 #include <readline/history.h>
+#endif
 
 @interface NuParser(Internal)
 - (int) depth;
@@ -253,8 +255,8 @@ id regexWithString(NSString *string)
     // create top-level context
     context = [[NSMutableDictionary alloc] init];
 
-    [context setObject:self forKey:[symbolTable symbolWithCString:"_parser"]];
-    [context setObject:symbolTable forKey:SYMBOLS_KEY];
+    [context setPossiblyNullObject:self forKey:[symbolTable symbolWithCString:"_parser"]];
+    [context setPossiblyNullObject:symbolTable forKey:SYMBOLS_KEY];
 
     [self reset];
     return self;
@@ -263,7 +265,7 @@ id regexWithString(NSString *string)
 - (void) close
 {
     // break this retain cycle so the parser can be deleted.
-    [context setObject:[NSNull null] forKey:[symbolTable symbolWithCString:"_parser"]];
+    [context setPossiblyNullObject:[NSNull null] forKey:[symbolTable symbolWithCString:"_parser"]];
 }
 
 - (void) dealloc
@@ -403,6 +405,7 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
         case 'n': [partial appendCharacter:0x0a]; break;
         case 'r': [partial appendCharacter:0x0d]; break;
         case 'f': [partial appendCharacter:0x0c]; break;
+        case 't': [partial appendCharacter:0x09]; break;
         case 'b': [partial appendCharacter:0x08]; break;
         case 'a': [partial appendCharacter:0x07]; break;
         case 'e': [partial appendCharacter:0x1b]; break;
@@ -858,6 +861,7 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
     return result;
 }
 
+#ifndef IPHONE
 - (int) interact
 {
     printf("Nu Shell.\n");
@@ -912,15 +916,23 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
                     if ([cursor car] != [NSNull null]) {
                         id expression = [cursor car];
                         //printf("evaluating %s\n", [[expression stringValue] cStringUsingEncoding:NSUTF8StringEncoding]);
-#ifdef DARWIN
+                        #ifdef DARWIN
                         @try
-#else
-                        NS_DURING
-#endif
+                            #else
+                            NS_DURING
+                            #endif
                         {
                             id result = [expression evalWithContext:context];
-                            if (result)
-                            printf("%s\n", [[result stringValue] cStringUsingEncoding:NSUTF8StringEncoding]);
+                            if (result) {
+                                id stringToDisplay;
+                                if ([result respondsToSelector:@selector(escapedStringRepresentation)]) {
+                                    stringToDisplay = [result escapedStringRepresentation];
+                                }
+                                else {
+                                    stringToDisplay = [result stringValue];
+                                }
+                                printf("%s\n", [stringToDisplay cStringUsingEncoding:NSUTF8StringEncoding]);
+                            }
                         }
 #ifdef DARWIN
             @catch (NuException* nuexc) {
@@ -938,16 +950,16 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
                         NS_HANDLER
 #endif
                         {
-#ifndef DARWIN
+                            #ifndef DARWIN
                             id exception = localException;
-#endif
+                            #endif
                             printf("%s: %s\n",
                                 [[exception name] cStringUsingEncoding:NSUTF8StringEncoding],
                                 [[exception reason] cStringUsingEncoding:NSUTF8StringEncoding]);
                         }
-#ifndef DARWIN
+                        #ifndef DARWIN
                         NS_ENDHANDLER
-#endif
+                            #endif
                     }
                     cursor = [cursor cdr];
                 }
@@ -968,5 +980,5 @@ static int nu_parse_escape_sequences(NSString *string, int i, int imax, NSMutabl
     [pool release];
     return result;
 }
-
+#endif
 @end

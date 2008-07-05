@@ -139,6 +139,18 @@ limitations under the License.
     return array;
 }
 
+/*! Get an array containing the names of the class methods of a class. */
+- (NSArray *) classMethodNames
+{
+    return [[self classMethods] mapSelector:@selector(name)];
+}
+
+/*! Get an array containing the names of the instance methods of a class. */
+- (NSArray *) instanceMethodNames
+{
+    return [[self instanceMethods] mapSelector:@selector(name)];
+}
+
 - (BOOL) isDerivedFromClass:(Class) parent
 {
     Class myclass = [self wrappedClass];
@@ -212,7 +224,11 @@ limitations under the License.
         - (id) addClassMethod:(NSString *)methodName signature:(NSString *)signature body:(NuBlock *)block
         {
             //NSLog(@"adding class method %@", methodName);
-            return add_method_to_class(c, methodName, signature, block);
+            #ifdef DARWIN
+            return add_method_to_class(c->isa, methodName, signature, block);
+            #else
+            return add_method_to_class(c->class_pointer, methodName, signature, block);
+            #endif
         }
 
         - (id) addInstanceVariable:(NSString *)variableName signature:(NSString *)signature

@@ -29,8 +29,10 @@ limitations under the License.
 #import "parser.h"
 #import "regex.h"
 #import "version.h"
-#import "Nu.h"
+#import "Nu/Nu.h"
+#ifndef IPHONE
 #include <readline/readline.h>
+#endif
 #include <stdlib.h>
 
 @implementation NuBreakException
@@ -49,15 +51,26 @@ limitations under the License.
 
 @end
 
-static bool valueIsTrue(id value)
+@implementation NuReturnException
+- (id) initWithValue:(id) v;
 {
-    bool result = value && (value != Nu__null);
-    if (result && nu_objectIsKindOfClass(value, [NSNumber class])) {
-        if ([value doubleValue] == 0.0)
-            result = false;
-    }
-    return result;
+    [super initWithName:@"NuReturnException" reason:@"A return operator was evaluated" userInfo:nil];
+    value = [v retain];
+    return self; ;
 }
+
+- (void) dealloc
+{
+    [value release];
+    [super dealloc];
+}
+
+- (id) value
+{
+    return value;
+}
+
+@end
 
 @implementation NuOperator : NSObject
 - (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context {return nil;}
@@ -218,7 +231,7 @@ static bool valueIsTrue(id value)
     while (pairs != Nu__null) {
         id condition = [[pairs car] car];
         id test = [condition evalWithContext:context];
-        if (valueIsTrue(test)) {
+        if (nu_valueIsTrue(test)) {
             value = test;
             id cursor = [[pairs car] cdr];
             while (cursor && (cursor != Nu__null)) {
@@ -288,7 +301,7 @@ static bool valueIsTrue(id value)
     id result = Nu__null;
     id test = [[cdr car] evalWithContext:context];
 
-    bool testIsTrue = flip ^ valueIsTrue(test);
+    bool testIsTrue = flip ^ nu_valueIsTrue(test);
     bool noneIsTrue = !testIsTrue;
 
     id expressions = [cdr cdr];
@@ -297,7 +310,7 @@ static bool valueIsTrue(id value)
         if (nu_objectIsKindOfClass(nextExpression, [NuCell class])) {
             /*if ([nextExpression car] == elseifSymbol) {
                 test = [[[[expressions car] cdr] car] evalWithContext:context];
-                testIsTrue = noneIsTrue && valueIsTrue(test);
+                testIsTrue = noneIsTrue && nu_valueIsTrue(test);
                 noneIsTrue = noneIsTrue && !testIsTrue;
                 if (testIsTrue)
                     // skip the test:
@@ -316,7 +329,7 @@ static bool valueIsTrue(id value)
         else {
             /*if (nextExpression == elseifSymbol) {
                 test = [[[expressions cdr] car] evalWithContext:context];
-                testIsTrue = noneIsTrue && valueIsTrue(test);
+                testIsTrue = noneIsTrue && nu_valueIsTrue(test);
                 noneIsTrue = noneIsTrue && !testIsTrue;
                 expressions = [expressions cdr];            // skip the test
             }
@@ -356,7 +369,7 @@ static bool valueIsTrue(id value)
 {
     id result = Nu__null;
     id test = [[cdr car] evalWithContext:context];
-    while (valueIsTrue(test)) {
+    while (nu_valueIsTrue(test)) {
         @try
         {
             id expressions = [cdr cdr];
@@ -389,7 +402,7 @@ static bool valueIsTrue(id value)
 {
     id result = Nu__null;
     id test = [[cdr car] evalWithContext:context];
-    while (!valueIsTrue(test)) {
+    while (!nu_valueIsTrue(test)) {
         @try
         {
             id expressions = [cdr cdr];
@@ -429,7 +442,7 @@ static bool valueIsTrue(id value)
     [loopinit evalWithContext:context];
     // evaluate the loop condition
     id test = [looptest evalWithContext:context];
-    while (valueIsTrue(test)) {
+    while (nu_valueIsTrue(test)) {
         @try
         {
             id expressions = [cdr cdr];
@@ -638,16 +651,21 @@ static bool valueIsTrue(id value)
     }
     else {
         #ifndef CLOSE_ON_VALUES
+        NuSymbolTable *symbolTable = [context objectForKey:SYMBOLS_KEY];
+        id classSymbol = [symbolTable symbolWithCString:"_class"];
         id searchContext = context;
         while (searchContext) {
             if ([searchContext objectForKey:symbol]) {
-                [searchContext setObject:result forKey:symbol];
+                [searchContext setPossiblyNullObject:result forKey:symbol];
                 return result;
+            }
+            else if ([searchContext objectForKey:classSymbol]) {
+                break;
             }
             searchContext = [searchContext objectForKey:PARENT_KEY];
         }
         #endif
-        [context setObject:result forKey:symbol];
+        [context setPossiblyNullObject:result forKey:symbol];
     }
     return result;
 }
@@ -707,9 +725,10 @@ static bool valueIsTrue(id value)
     id args = [[cdr cdr] car];
     id body = [[cdr cdr] cdr];
     NuBlock *block = [[NuBlock alloc] initWithParameters:args body:body context:context];
-    [context setObject:block forKey:symbol];      // this defines the function in the calling context
+                                                  // this defines the function in the calling context
+    [context setPossiblyNullObject:block forKey:symbol];
                                                   // this defines the function in the block context, which allows recursion
-    [[block context] setObject:block forKey:symbol];
+    [[block context] setPossiblyNullObject:block forKey:symbol];
     return block;
 }
 
@@ -726,7 +745,7 @@ static bool valueIsTrue(id value)
     value = [value evalWithContext:context];
     if (nu_objectIsKindOfClass(value, [NuBlock class])) {
         //NSLog(@"setting context[%@] = %@", symbol, value);
-        [((NSMutableDictionary *)[value context]) setObject:value forKey:symbol];
+        [((NSMutableDictionary *)[value context]) setPossiblyNullObject:value forKey:symbol];
     }
     return value;
 }
@@ -743,7 +762,8 @@ static bool valueIsTrue(id value)
     id body = [cdr cdr];
 
     NuMacro *macro = [[NuMacro alloc] initWithName:name body:body];
-    [context setObject:macro forKey:name];        // this defines the function in the calling context
+                                                  // this defines the function in the calling context
+    [context setPossiblyNullObject:macro forKey:name];
     return macro;
 }
 
@@ -863,6 +883,24 @@ static bool valueIsTrue(id value)
         }
     }
     return [NSNumber numberWithDouble:sum];
+}
+
+@end
+
+@interface Nu_exponentiation_operator : NuOperator {}
+@end
+
+@implementation Nu_exponentiation_operator
+- (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context
+{
+    id cursor = cdr;
+    double result = [[[cursor car] evalWithContext:context] doubleValue];
+    cursor = [cursor cdr];
+    while (cursor && (cursor != Nu__null)) {
+        result = pow(result, [[[cursor car] evalWithContext:context] doubleValue]);
+        cursor = [cursor cdr];
+    }
+    return [NSNumber numberWithDouble:result];
 }
 
 @end
@@ -1067,7 +1105,7 @@ static bool valueIsTrue(id value)
     id value = Nu__null;
     while (cursor && (cursor != Nu__null)) {
         value = [[cursor car] evalWithContext:context];
-        if (!valueIsTrue(value))
+        if (!nu_valueIsTrue(value))
             return Nu__null;
         cursor = [cursor cdr];
     }
@@ -1085,7 +1123,7 @@ static bool valueIsTrue(id value)
     id cursor = cdr;
     while (cursor && (cursor != Nu__null)) {
         id value = [[cursor car] evalWithContext:context];
-        if (valueIsTrue(value))
+        if (nu_valueIsTrue(value))
             return value;
         cursor = [cursor cdr];
     }
@@ -1104,7 +1142,7 @@ static bool valueIsTrue(id value)
     id cursor = cdr;
     if (cursor && (cursor != Nu__null)) {
         id value = [[cursor car] evalWithContext:context];
-        return valueIsTrue(value) ? Nu__null : [symbolTable symbolWithCString:"t"];
+        return nu_valueIsTrue(value) ? Nu__null : [symbolTable symbolWithCString:"t"];
     }
     return Nu__null;
 }
@@ -1142,6 +1180,7 @@ static bool valueIsTrue(id value)
 
 @end
 
+#ifndef IPHONE
 @interface Nu_gets_operator : NuOperator {}
 @end
 
@@ -1154,6 +1193,7 @@ static bool valueIsTrue(id value)
 }
 
 @end
+#endif
 
 @interface Nu_print_operator : NuOperator {}
 @end
@@ -1353,7 +1393,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
     id arg_values = [[NuCell alloc] init];
 
     id cursor = [cdr car];
-    if ([[cursor car] atom]) {
+    if ((cursor != [NSNull null]) && [[cursor car] atom]) {
         [arg_names setCar:[cursor car]];
         [arg_values setCar:[[cursor cdr] car]];
     }
@@ -1372,13 +1412,15 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
             }
         }
     }
-
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     id body = [cdr cdr];
     NuBlock *block = [[NuBlock alloc] initWithParameters:arg_names body:body context:context];
-    id result = [block evalWithArguments:arg_values context:context];
+    id result = [[block evalWithArguments:arg_values context:context] retain];
     [arg_names release];
     [arg_values release];
     [block release];
+    [pool release];
+    [result autorelease];
     return result;
 }
 
@@ -1393,7 +1435,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
     NuSymbolTable *symbolTable = [context objectForKey:SYMBOLS_KEY];
     id className = [cdr car];
     id body = Nu__null;
-    #ifdef __x86_64__
+    #if defined(__x86_64__) || defined(IPHONE)
     Class newClass = nil;
     #endif
     NuClass *childClass;
@@ -1408,7 +1450,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
         if (!parentClass)
             [NSException raise:@"NuUndefinedSuperclass" format:@"undefined superclass %@", [parentName stringValue]];
 
-        #ifdef __x86_64__
+        #if defined(__x86_64__) || defined(IPHONE)
         newClass = objc_allocateClassPair(parentClass, [[className stringValue] cStringUsingEncoding:NSUTF8StringEncoding], 0);
         childClass = [NuClass classWithClass:newClass];
         [childClass setRegistered:NO];
@@ -1433,12 +1475,12 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
     if (body && (body != Nu__null)) {
         NuBlock *block = [[NuBlock alloc] initWithParameters:Nu__null body:body context:context];
         [[block context]
-            setObject:childClass
+            setPossiblyNullObject:childClass
             forKey:[symbolTable symbolWithCString:"_class"]];
         result = [block evalWithArguments:Nu__null context:Nu__null];
         [block release];
     }
-    #ifdef __x86_64__
+    #if defined(__x86_64__) || defined(IPHONE)
     if (newClass && ([childClass isRegistered] == NO)) {
         [childClass registerClass];
     }
@@ -1490,7 +1532,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
 {
     NuSymbolTable *symbolTable = [context objectForKey:SYMBOLS_KEY];
     NuClass *classWrapper = [context objectForKey:[symbolTable symbolWithCString:"_class"]];
-    #ifdef __x86_64__
+    #if defined(__x86_64__) || defined(IPHONE)
     // this will only work if the class is unregistered...
     if ([classWrapper isRegistered]) {
         [NSException raise:@"NuIvarAddedTooLate" format:@"instance variables must be added when a class is created and before any method declarations"];
@@ -1509,11 +1551,13 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
         class_addInstanceVariable_withSignature(classToExtend,
             [[variableName stringValue] cStringUsingEncoding:NSUTF8StringEncoding],
             [signature cStringUsingEncoding:NSUTF8StringEncoding]);
+        if ([signature isEqual:@"@"]) {
+            //nu_registerIvarForRelease(classToExtend, [variableName stringValue]);
+        }
         //NSLog(@"adding ivar %@ with signature %@", [variableName stringValue], signature);
     }
     return Nu__null;
 }
-
 @end
 
 @interface Nu_ivars_operator : NuOperator {}
@@ -1525,7 +1569,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
     NuSymbolTable *symbolTable = [context objectForKey:SYMBOLS_KEY];
 
     NuClass *classWrapper = [context objectForKey:[symbolTable symbolWithCString:"_class"]];
-    #ifdef __x86_64__
+    #if defined(__x86_64__) || defined(IPHONE)
     // this will only work if the class is unregistered...
     if ([classWrapper isRegistered]) {
         [NSException raise:@"NuIvarAddedTooLate" format:@"instance variables must be added when a class is created and before any method declarations"];
@@ -1535,6 +1579,23 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
     if (!classToExtend)
         [NSException raise:@"NuMisplacedDeclaration" format:@"dynamic instance variables declaration with no enclosing class declaration"];
     class_addInstanceVariable_withSignature(classToExtend, "__nuivars", "@");
+    nu_registerIvarForRelease(classToExtend, @"__nuivars");
+    return Nu__null;
+}
+
+@end
+
+@interface Nu_ivar_accessors_operator : NuOperator {}
+@end
+
+@implementation Nu_ivar_accessors_operator
+- (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context
+{
+    NuSymbolTable *symbolTable = [context objectForKey:SYMBOLS_KEY];
+    NuClass *classWrapper = [context objectForKey:[symbolTable symbolWithCString:"_class"]];
+    [classWrapper registerClass];
+    Class classToExtend = [classWrapper wrappedClass];
+    [classToExtend include:[NuClass classWithClass:[NuAutomaticIvars class]]];
     return Nu__null;
 }
 
@@ -1607,7 +1668,7 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
 
 - (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context
 {
-    @throw [[NuBreakException alloc] init];
+    @throw [[[NuBreakException alloc] init] autorelease];
     return nil;                                   // unreached
 }
 
@@ -1620,7 +1681,24 @@ id loadNuLibraryFile(NSString *nuFileName, id parser, id context, id symbolTable
 
 - (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context
 {
-    @throw [[NuContinueException alloc] init];
+    @throw [[[NuContinueException alloc] init] autorelease];
+    return nil;                                   // unreached
+}
+
+@end
+
+@interface Nu_return_operator : NuOperator {}
+@end
+
+@implementation Nu_return_operator
+
+- (id) callWithArguments:(id)cdr context:(NSMutableDictionary *)context
+{
+    id value = nil;
+    if (cdr && cdr != Nu__null) {
+        value = [[cdr car] evalWithContext:context];
+    }
+    @throw [[[NuReturnException alloc] initWithValue:value] autorelease];
     return nil;                                   // unreached
 }
 
@@ -1754,8 +1832,8 @@ void load_builtins(NuSymbolTable *symbolTable)
 
     install("car",      Nu_car_operator);
     install("cdr",      Nu_cdr_operator);
-	install("first",    Nu_car_operator);
-	install("rest",     Nu_cdr_operator);
+    install("first",    Nu_car_operator);
+    install("rest",     Nu_cdr_operator);
     install("head",     Nu_car_operator);
     install("tail",     Nu_cdr_operator);
     install("atom",     Nu_atom_operator);
@@ -1776,6 +1854,7 @@ void load_builtins(NuSymbolTable *symbolTable)
     install("for",      Nu_for_operator);
     install("break",    Nu_break_operator);
     install("continue", Nu_continue_operator);
+    install("return",   Nu_return_operator);
 
     install("try",      Nu_try_operator);
     #ifdef DARWIN
@@ -1803,6 +1882,7 @@ void load_builtins(NuSymbolTable *symbolTable)
     install("-",        Nu_subtract_operator);
     install("*",        Nu_multiply_operator);
     install("/",        Nu_divide_operator);
+    install("**",       Nu_exponentiation_operator);
     install("%",        Nu_modulus_operator);
     install("&",        Nu_bitwiseand_operator);
     install("|",        Nu_bitwiseor_operator);
@@ -1823,7 +1903,9 @@ void load_builtins(NuSymbolTable *symbolTable)
 
     install("do",       Nu_do_operator);
 
+    #ifndef IPHONE
     install("gets",     Nu_gets_operator);
+    #endif
     install("puts",     Nu_puts_operator);
     install("print",    Nu_print_operator);
 
@@ -1843,6 +1925,7 @@ void load_builtins(NuSymbolTable *symbolTable)
     install("cmethod",  Nu_cmethod_operator);
     install("ivar",     Nu_ivar_operator);
     install("ivars",    Nu_ivars_operator);
+    install("ivar-accessors", Nu_ivar_accessors_operator);
 
     install("call",     Nu_call_operator);
     install("send",     Nu_send_operator);

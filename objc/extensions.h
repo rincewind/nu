@@ -17,6 +17,8 @@ limitations under the License.
 */
 
 #import <Foundation/Foundation.h>
+@class NuCell;
+@class NuBlock;
 
 #ifdef LINUX
 #define bool char
@@ -32,6 +34,8 @@ limitations under the License.
 - (bool) atom;
 /*! The length of nil is zero. */
 - (int) length;
+/*! count is a synonym for length. */
+- (int) count;
 @end
 
 /*!
@@ -41,6 +45,26 @@ limitations under the License.
 @interface NSArray(Nu)
 /*! Creates an array that contains the contents of a specified list. */
 + (NSArray *) arrayWithList:(id) list;
+
+/*! Sort an array using its elements' compare: method. */
+- (NSArray *) sort;
+
+/*! Convert an array into a list. */
+- (NuCell *) list;
+
+@end
+
+/*!
+    @category NSMutableArray(Nu)
+    @abstract NSMutableArray extensions for Nu programming.
+ */
+@interface NSMutableArray(Nu)
+/*! Add an object to an array, automatically converting nil into [NSNull null]. */
+- (void) addPossiblyNullObject:(id)anObject;
+/*! Insert an object into an array, automatically converting nil into [NSNull null]. */
+- (void) insertPossiblyNullObject:(id)anObject atIndex:(int)index;
+/*! Replace an object in an array, automatically converting nil into [NSNull null]. */
+- (void) replaceObjectAtIndex:(int)index withPossiblyNullObject:(id)anObject;
 @end
 
 /*!
@@ -50,6 +74,15 @@ limitations under the License.
 @interface NSSet(Nu)
 /*! Creates a set that contains the contents of a specified list. */
 + (NSSet *) setWithList:(id) list;
+@end
+
+/*!
+    @category NSSet(Nu)
+    @abstract NSSet extensions for Nu programming.
+ */
+@interface NSMutableSet(Nu)
+/*! Add an object to a set, automatically converting nil into [NSNull null]. */
+- (void) addPossiblyNullObject:(id)anObject;
 @end
 
 /*!
@@ -76,6 +109,8 @@ limitations under the License.
     If no value is found, looks in the context's parent, continuing
     upward until no more parent contexts are found. */
 - (id) lookupObjectForKey:(id)key;
+/*! Add an object to a dictionary, automatically converting nil into [NSNull null]. */
+- (void) setPossiblyNullObject:(id) anObject forKey:(id) aKey;
 #ifdef LINUX
 - (void) setValue:(id) value forKey:(id) key;
 #endif
@@ -94,11 +129,30 @@ limitations under the License.
     Expressions are wrapped in #{...} where the ellipses correspond to a Nu expression.
  */
 - (id) evalWithContext:(NSMutableDictionary *) context;
+
+#ifndef IPHONE
 /*! Run a shell command and return its results in a string. */
 + (NSString *) stringWithShellCommand:(NSString *) command;
+#endif
 
 /*! Create a string from a specified character */
 + (NSString *) stringWithCharacter:(unichar) c;
+
+/*! Convert a string into a symbol. */
+- (id) symbolValue;
+
+/*! Get a representation of the string that can be used in Nu source code. */
+- (NSString *) escapedStringRepresentation;
+
+/*! Split a string into lines. */
+- (NSArray *) lines;
+
+/*! Replace a substring with another. */
+- (NSString *) replaceString:(NSString *) target withString:(NSString *) replacement;
+
+/*! Iterate over each character in a string, evaluating the provided block for each character. */
+- (id) each:(NuBlock *) block;
+
 #ifdef LINUX
 + (NSString *) stringWithCString:(const char *) cString encoding:(NSStringEncoding) encoding;
 - (const char *) cStringUsingEncoding:(NSStringEncoding) encoding;
@@ -149,10 +203,24 @@ limitations under the License.
 + (double) sqrt: (double) x;
 /*! Get the square of a number. */
 + (double) square: (double) x;
+/*! Get the cubed root of a number. */
++ (double) cbrt: (double) x;
 /*! Get the cosine of an angle. */
 + (double) cos: (double) x;
 /*! Get the sine of an angle. */
 + (double) sin: (double) x;
+/*! Get the largest integral value that is not greater than x.*/
++ (double) floor: (double) x;
+/*! Get the smallest integral value that is greater than or equal to x.*/
++ (double) ceil: (double) x;
+/*! Get the integral value nearest to x by always rounding half-way cases away from zero. */
++ (double) round: (double) x;
+/*! Raise x to the power of y */
++ (double) raiseNumber: (double) x toPower: (double) y;
+/*! Get the qouteint of x divided by y as an integer */
++ (int) integerDivide:(int) x by:(int) y;
+/*! Get the remainder of x divided by y as an integer */
++ (int) integerMod:(int) x by:(int) y;
 /*! Get a random integer. */
 + (long) random;
 /*! Seed the random number generator. */
@@ -190,7 +258,7 @@ limitations under the License.
     @abstract NSMethodSignature extensions for Nu programming.
  */
 @interface NSMethodSignature (Nu)
-/*! Get the type string for a method signature */
+/*! Get the type string for a method signature. */
 - (NSString *) typeString;
 @end
 
@@ -201,3 +269,16 @@ limitations under the License.
 + (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector;
 @end
 #endif
+
+/*!
+   @class NuAutomaticIvars
+   @abstract Include this class to get handleUnknownMessage:withContext: to emulate ivar accessors.
+   @discussion This class is used inside Nu to implement the ivars operator.
+ */
+@interface NuAutomaticIvars : NSObject
+{
+}
+
+/*! Attempt to treat unknown messages as ivar accessors. */
+- (id) handleUnknownMessage:(NuCell *) message withContext:(id) context;
+@end

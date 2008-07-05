@@ -25,7 +25,9 @@ limitations under the License.
 #include <stdlib.h>
 #include <string.h>
 #ifdef DARWIN
+#ifndef IPHONE
 #include <objc/objc-class.h>
+#endif
 #endif
 #include <math.h>
 #import <Foundation/Foundation.h> // for NSException
@@ -174,9 +176,16 @@ SEL sel_getUid(const char *str)
 }
 #endif
 
+#ifdef IPHONE
+#import "objc/runtime.h"
+IMP nu_class_replaceMethod(Class cls, SEL name, IMP imp, const char *types) {
+	return class_replaceMethod(cls, name, imp, types);	
+}
+#endif
+
 #ifndef LEOPARD_OBJC2
 #include "objc_runtime.h"
-
+#ifndef IPHONE
 BOOL class_hasMethod(Class cls, SEL name)
 {
     // Method (Method_t on Linux) existing_method = class_getInstanceMethod(cls, name);
@@ -248,6 +257,7 @@ Ivar *class_copyIvarList(Class cls, unsigned int *outCount)
     return list;
 }
 
+
 #ifdef DARWIN
 Method *class_copyMethodList(Class cls, unsigned int *outCount)
 #else
@@ -278,10 +288,12 @@ Method_t *class_copyMethodList(Class cls, unsigned int *outCount)
     return list;
 }
 
+
 Class class_getSuperclass(Class cls)
 {
     return cls->super_class;
 }
+
 
 #ifdef DARWIN
 const char *ivar_getName(Ivar v)
@@ -309,6 +321,7 @@ const char *ivar_getTypeEncoding(Ivar_t v)
 {
     return v->ivar_type;
 }
+#endif
 
 #ifdef DARWIN
 char *method_copyArgumentType(Method m, unsigned int index)
@@ -402,7 +415,7 @@ static struct objc_method_list** method_list_alloc(int cnt)
     mlp[cnt-1] = (struct objc_method_list*)-1;    // END_OF_METHODS_LIST
     return mlp;
 }
-
+#ifndef IPHONE
 // this function was taken from RubyCocoa
 #ifdef DARWIN
 Class objc_allocateClassPair(Class super_class, const char *name, size_t extraBytes)
@@ -474,7 +487,8 @@ Class objc_allocateClassPair(Class super_class, const char *name, size_t extraBy
     return c;
 }
 #endif
-
+#endif
+#ifndef IPHONE
 void objc_registerClassPair(Class cls)
 {
     objc_addClass(cls);
@@ -493,6 +507,7 @@ const char *class_getName(Class c)
 {
     return c->name;
 }
+#endif
 
 #ifdef DARWIN
 void method_exchangeImplementations(Method method1, Method method2)
@@ -541,7 +556,7 @@ IMP nu_class_replaceMethod(Class cls, SEL name, IMP imp, const char *types)
 
 void class_addInstanceVariable_withSignature(Class thisClass, const char *variableName, const char *signature)
 {
-    #ifdef __x86_64__
+    #if defined(__x86_64__) || defined(IPHONE)
     extern size_t size_of_objc_type(const char *typeString);
     size_t size = size_of_objc_type(signature);
     uint8_t alignment = log2(size);

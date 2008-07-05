@@ -23,6 +23,7 @@ limitations under the License.
 #import <Foundation/Foundation.h>
 @class NuBlock;
 @class NuClass;
+@class NuCell;
 
 /*!
     @category NSObject(Nu)
@@ -44,6 +45,10 @@ limitations under the License.
 + (NSArray *) classMethods;
 /*! Get an array containing NuMethod representations of the instance methods of a class. */
 + (NSArray *) instanceMethods;
+/*! Get an array containing the names of the class methods of a class. */
++ (NSArray *) classMethodNames;
+/*! Get an array containing the names of the instance methods of a class. */
++ (NSArray *) instanceMethodNames;
 /*! Get an array containing the names of all instance variables of the class. */
 + (NSArray *) instanceVariableNames;
 
@@ -76,5 +81,8 @@ This method should be overridden by subclasses to be more helpful. */
 
 /*! Swap a pair of class methods of the underlying class. */
 + (BOOL) exchangeClassMethod:(SEL)sel1 withMethod:(SEL)sel2;
+
+/*! Concisely set key-value pairs from a property list. */
+- (id) set:(NuCell *) propertyList;
 
 @end

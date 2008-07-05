@@ -163,29 +163,38 @@ limitations under the License.
 
 - (NSMutableString *) stringValue
 {
-    NuCell *cell = self;
+    NuCell *cursor = self;
     NSMutableString *result = [NSMutableString stringWithString:@"("];
-    bool first = true;
-    while (IS_NOT_NULL(cell)) {
-        if (first)
-            first = false;
-        else
+    int count = 0;
+    while (IS_NOT_NULL(cursor)) {
+        if (count > 0)
             [result appendString:@" "];
-        id mycar = [cell car];
-        if (nu_objectIsKindOfClass(mycar, [NuCell class])) {
-            [result appendString:[mycar stringValue]];
+        count++;
+        id item = [cursor car];
+        if (nu_objectIsKindOfClass(item, [NuCell class])) {
+            [result appendString:[item stringValue]];
         }
-        else if (mycar && (mycar != Nu__null)) {
-            [result appendString:[mycar description]];
+        else if (IS_NOT_NULL(item)) {
+            if ([item respondsToSelector:@selector(escapedStringRepresentation)]) {
+                [result appendString:[item escapedStringRepresentation]];
+            }
+            else {
+                [result appendString:[item description]];
+            }
         }
         else {
             [result appendString:@"()"];
         }
-        cell = [cell cdr];
+        cursor = [cursor cdr];
         // check for dotted pairs
-        if (IS_NOT_NULL(cell) && !nu_objectIsKindOfClass(cell, [NuCell class])) {
+        if (IS_NOT_NULL(cursor) && !nu_objectIsKindOfClass(cursor, [NuCell class])) {
             [result appendString:@" . "];
-            [result appendString:[cell description]];
+            if ([cursor respondsToSelector:@selector(escapedStringRepresentation)]) {
+                [result appendString:[((id) cursor) escapedStringRepresentation]];
+            }
+            else {
+                [result appendString:[cursor description]];
+            }
             break;
         }
     }
@@ -315,7 +324,7 @@ extern char *nu_parsedFilename(int i);
         while (cursor && (cursor != Nu__null)) {
             [args setCar:[cursor car]];
             id result = [block evalWithArguments:args context:Nu__null];
-            if (result && (result != Nu__null)) {
+            if (nu_valueIsTrue(result)) {
                 [resultCursor setCdr:[NuCell cellWithCar:[cursor car] cdr:[resultCursor cdr]]];
                 resultCursor = [resultCursor cdr];
             }
@@ -338,7 +347,7 @@ extern char *nu_parsedFilename(int i);
         while (cursor && (cursor != Nu__null)) {
             [args setCar:[cursor car]];
             id result = [block evalWithArguments:args context:Nu__null];
-            if (result && (result != Nu__null)) {
+            if (nu_valueIsTrue(result)) {
                 [args release];
                 return [cursor car];
             }
@@ -372,6 +381,25 @@ extern char *nu_parsedFilename(int i);
     return result;
 }
 
+- (id) mapSelector:(SEL) sel
+{
+    NuCell *parent = [[NuCell alloc] init];
+    id args = [[NuCell alloc] init];
+    id cursor = self;
+    id resultCursor = parent;
+    while (cursor && (cursor != Nu__null)) {
+        id object = [cursor car];
+        id result = [object performSelector:sel];
+        [resultCursor setCdr:[NuCell cellWithCar:result cdr:[resultCursor cdr]]];
+        cursor = [cursor cdr];
+        resultCursor = [resultCursor cdr];
+    }
+    [args release];
+    NuCell *result = [parent cdr];
+    [parent release];
+    return result;
+}
+
 - (id) reduce:(NuBlock *) block from:(id) initial
 {
     id result = initial;
@@ -400,6 +428,11 @@ extern char *nu_parsedFilename(int i);
         count++;
     }
     return count;
+}
+
+- (int) count
+{
+    return [self length];
 }
 
 - (id) comments {return nil;}

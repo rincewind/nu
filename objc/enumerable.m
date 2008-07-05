@@ -1,6 +1,6 @@
 /*!
 @file enumerable.m
-@description The NuEnumerable mixin. 
+@description The NuEnumerable mixin.
 This class implements methods that enumerate over collections of objects.
 The receiving class must have an objectEnumerator method that returns an NSEnumerator.
 @copyright Copyright (c) 2007 Neon Design Technology, Inc.
@@ -20,6 +20,7 @@ limitations under the License.
 
 #import "enumerable.h"
 #import "objc_runtime.h"
+#import "nuinternals.h"
 
 @interface NuEnumerable(Unimplemented)
 - (id) objectEnumerator;
@@ -34,8 +35,20 @@ limitations under the License.
         NSEnumerator *enumerator = [self objectEnumerator];
         id object;
         while ((object = [enumerator nextObject])) {
-            [args setCar:object];
-            [block evalWithArguments:args context:Nu__null];
+            @try
+            {
+                [args setCar:object];
+                [block evalWithArguments:args context:Nu__null];
+            }
+            @catch (NuBreakException *exception) {
+                break;
+            }
+            @catch (NuContinueException *exception) {
+                // do nothing, just continue with the next loop iteration
+            }
+            @catch (id exception) {
+                @throw(exception);
+            }
         }
     }
     [args release];
@@ -51,9 +64,21 @@ limitations under the License.
         id object;
         int i = 0;
         while ((object = [enumerator nextObject])) {
-            [args setCar:object];
-            [[args cdr] setCar:[NSNumber numberWithInt:i]];
-            [block evalWithArguments:args context:Nu__null];
+            @try
+            {
+                [args setCar:object];
+                [[args cdr] setCar:[NSNumber numberWithInt:i]];
+                [block evalWithArguments:args context:Nu__null];
+            }
+            @catch (NuBreakException *exception) {
+                break;
+            }
+            @catch (NuContinueException *exception) {
+                // do nothing, just continue with the next loop iteration
+            }
+            @catch (id exception) {
+                @throw(exception);
+            }
             i++;
         }
     }
@@ -61,7 +86,7 @@ limitations under the License.
     return self;
 }
 
-- (id) select:(NuBlock *) block
+- (NSArray *) select:(NuBlock *) block
 {
     NSMutableArray *selected = [[NSMutableArray alloc] init];
     id args = [[NuCell alloc] init];
@@ -71,7 +96,7 @@ limitations under the License.
         while ((object = [enumerator nextObject])) {
             [args setCar:object];
             id result = [block evalWithArguments:args context:Nu__null];
-            if (result && (result != Nu__null)) {
+            if (nu_valueIsTrue(result)) {
                 [selected addObject:object];
             }
         }
@@ -89,7 +114,7 @@ limitations under the License.
         while ((object = [enumerator nextObject])) {
             [args setCar:object];
             id result = [block evalWithArguments:args context:Nu__null];
-            if (result && (result != Nu__null)) {
+            if (nu_valueIsTrue(result)) {
                 [args release];
                 return object;
             }
@@ -99,7 +124,7 @@ limitations under the License.
     return Nu__null;
 }
 
-- (id) map:(NuBlock *) block
+- (NSArray *) map:(NuBlock *) block
 {
     NSMutableArray *results = [[NSMutableArray alloc] init];
     id args = [[NuCell alloc] init];
@@ -112,6 +137,18 @@ limitations under the License.
         }
     }
     [args release];
+    return results;
+}
+
+- (NSArray *) mapSelector:(SEL) sel
+{
+    NSMutableArray *results = [[NSMutableArray alloc] init];
+    NSEnumerator *enumerator = [self objectEnumerator];
+    id object;
+    while ((object = [enumerator nextObject])) {
+        // this will fail (crash!) if the selector returns any type other than an object.
+        [results addObject:[object performSelector:sel]];
+    }
     return results;
 }
 
@@ -192,14 +229,25 @@ limitations under the License.
         NSEnumerator *enumerator = [self reverseObjectEnumerator];
         id object;
         while ((object = [enumerator nextObject])) {
-            [args setCar:object];
-            [block evalWithArguments:args context:Nu__null];
+            @try
+            {
+                [args setCar:object];
+                [block evalWithArguments:args context:Nu__null];
+            }
+            @catch (NuBreakException *exception) {
+                break;
+            }
+            @catch (NuContinueException *exception) {
+                // do nothing, just continue with the next loop iteration
+            }
+            @catch (id exception) {
+                @throw(exception);
+            }
         }
     }
     [args release];
     return self;
 }
-
 
 static NSComparisonResult sortedArrayUsingBlockHelper(id a, id b, void *context)
 {
@@ -216,7 +264,7 @@ static NSComparisonResult sortedArrayUsingBlockHelper(id a, id b, void *context)
     return [result intValue];
 }
 
-- (id) sortedArrayUsingBlock:(NuBlock *) block
+- (NSArray *) sortedArrayUsingBlock:(NuBlock *) block
 {
     return [self sortedArrayUsingFunction:sortedArrayUsingBlockHelper context:block];
 }

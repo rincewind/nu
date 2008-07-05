@@ -42,6 +42,11 @@ extern id Nu__null;
     return 0;
 }
 
+- (int) count
+{
+    return 0;
+}
+
 - (id) stringValue
 {
     return @"()";
@@ -77,10 +82,10 @@ extern id Nu__null;
     id m = [[method car] evalWithContext:context];
     if ([m isKindOfClass:[NSNumber class]]) {
         int mm = [m intValue];
-		if (mm < 0) {
-			// if the index is negative, index from the end of the array
-			mm += [self count];
-		}
+        if (mm < 0) {
+            // if the index is negative, index from the end of the array
+            mm += [self count];
+        }
         if ((mm < [self count]) && (mm >= 0)) {
             return [self objectAtIndex:mm];
         }
@@ -91,6 +96,48 @@ extern id Nu__null;
     else {
         return [super handleUnknownMessage:method withContext:context];
     }
+}
+
+// This default sort method sorts an array using its elements' compare: method.
+- (NSArray *) sort
+{
+    return [self sortedArrayUsingSelector:@selector(compare:)];
+}
+
+// Convert an array into a list.
+- (NuCell *) list
+{
+    int count = [self count];
+    if (count == 0)
+        return nil;
+    NuCell *result = [[[NuCell alloc] init] autorelease];
+    NuCell *cursor = result;
+    [result setCar:[self objectAtIndex:0]];
+    for (int i = 1; i < count; i++) {
+        [cursor setCdr:[[[NuCell alloc] init] autorelease]];
+        cursor = [cursor cdr];
+        [cursor setCar:[self objectAtIndex:i]];
+    }
+    return result;
+}
+
+@end
+
+@implementation NSMutableArray(Nu)
+
+- (void) addPossiblyNullObject:(id)anObject
+{
+    [self addObject:((anObject == nil) ? (id)[NSNull null] : anObject)];
+}
+
+- (void) insertPossiblyNullObject:(id)anObject atIndex:(int)index
+{
+    [self insertObject:((anObject == nil) ? (id)[NSNull null] : anObject) atIndex:index];
+}
+
+- (void) replaceObjectAtIndex:(int)index withPossiblyNullObject:(id)anObject
+{
+    [self replaceObjectAtIndex:index withObject:((anObject == nil) ? (id)[NSNull null] : anObject)];
 }
 
 @end
@@ -105,6 +152,15 @@ extern id Nu__null;
         cursor = [cursor cdr];
     }
     return s;
+}
+
+@end
+
+@implementation NSMutableSet(Nu)
+
+- (void) addPossiblyNullObject:(id)anObject
+{
+    [self addObject:((anObject == nil) ? (id)[NSNull null] : anObject)];
 }
 
 @end
@@ -145,6 +201,34 @@ extern id Nu__null;
     }
 }
 
+// Iterate over the key-object pairs in a dictionary. Pass it a block with two arguments: (key object).
+- (id) each:(id) block
+{
+    id args = [[NuCell alloc] init];
+    [args setCdr:[[[NuCell alloc] init] autorelease]];
+    NSEnumerator *keyEnumerator = [[self allKeys] objectEnumerator];
+    id key;
+    while ((key = [keyEnumerator nextObject])) {
+        @try
+        {
+            [args setCar:key];
+            [[args cdr] setCar:[self objectForKey:key]];
+            [block evalWithArguments:args context:Nu__null];
+        }
+        @catch (NuBreakException *exception) {
+            break;
+        }
+        @catch (NuContinueException *exception) {
+            // do nothing, just continue with the next loop iteration
+        }
+        @catch (id exception) {
+            @throw(exception);
+        }
+    }
+    [args release];
+    return self;
+}
+
 @end
 
 @implementation NSMutableDictionary(Nu)
@@ -155,6 +239,11 @@ extern id Nu__null;
     id parent = [self objectForKey:PARENT_KEY];
     if (!parent) return nil;
     return [parent lookupObjectForKey:key];
+}
+
+- (void) setPossiblyNullObject:(id) anObject forKey:(id) aKey
+{
+    [self setObject:((anObject == nil) ? (id)[NSNull null] : anObject) forKey:aKey];
 }
 
 #ifdef LINUX
@@ -169,6 +258,45 @@ extern id Nu__null;
 - (id) stringValue
 {
     return self;
+}
+
+- (NSString *) escapedStringRepresentation
+{
+    NSMutableString *result = [NSMutableString stringWithString:@"\""];
+    int length = [self length];
+    for (int i = 0; i < length; i++) {
+        unichar c = [self characterAtIndex:i];
+        if (c < 32) {
+            switch (c) {
+                case 0x07: [result appendString:@"\\a"]; break;
+                case 0x08: [result appendString:@"\\b"]; break;
+                case 0x09: [result appendString:@"\\t"]; break;
+                case 0x0a: [result appendString:@"\\n"]; break;
+                case 0x0c: [result appendString:@"\\f"]; break;
+                case 0x0d: [result appendString:@"\\r"]; break;
+                case 0x1b: [result appendString:@"\\e"]; break;
+                default:
+                    [result appendFormat:@"\\x%02x", c];
+            }
+        }
+        else if (c == '"') {
+            [result appendString:@"\\\""];
+        }
+        else if (c == '\\') {
+            [result appendString:@"\\\\"];
+        }
+        else if (c < 127) {
+            [result appendCharacter:c];
+        }
+        else if (c < 256) {
+            [result appendFormat:@"\\x%02x", c];
+        }
+        else {
+            [result appendFormat:@"\\u%04x", c];
+        }
+    }
+    [result appendString:@"\""];
+    return result;
 }
 
 - (id) evalWithContext:(NSMutableDictionary *) context
@@ -211,6 +339,8 @@ extern id Nu__null;
     return [self stringWithCString:"\n" encoding:NSUTF8StringEncoding];
 }
 
+#ifndef IPHONE
+
 // Read the text output of a shell command into a string and return the string.
 + (NSString *) stringWithShellCommand:(NSString *) command
 {
@@ -232,6 +362,7 @@ extern id Nu__null;
     NSData *data = [[[task standardOutput] fileHandleForReading] readDataToEndOfFile];
     return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
 }
+#endif
 
 // If the last character is a newline, delete it.
 - (NSString *) chomp
@@ -259,6 +390,55 @@ extern id Nu__null;
     #endif
 }
 
+// Convert a string into a symbol.
+- (id) symbolValue
+{
+    return [[NuSymbolTable sharedSymbolTable] symbolWithString:self];
+}
+
+// Split a string into lines.
+- (NSArray *) lines
+{
+    NSArray *a = [self componentsSeparatedByString:@"\n"];
+    if ([[a lastObject] isEqualToString:@""]) {
+        return [a subarrayWithRange:NSMakeRange(0, [a count]-1)];
+    }
+    else {
+        return a;
+    }
+}
+
+// Replace a substring with another.
+- (NSString *) replaceString:(NSString *) target withString:(NSString *) replacement
+{
+    NSMutableString *s = [NSMutableString stringWithString:self];
+    [s replaceOccurrencesOfString:target withString:replacement options:0 range:NSMakeRange(0, [self length])];
+    return s;
+}
+
+- (id) each:(NuBlock *) block
+{
+    int count = [self length];
+    NuCell *args = [[NuCell alloc] init];
+    for (int i = 0; i < count; i++) {
+        @try
+        {
+            [args setCar:[NSNumber numberWithInteger:[self characterAtIndex:i]]];
+            [block evalWithArguments:args context:Nu__null];
+        }
+        @catch (NuBreakException *exception) {
+            break;
+        }
+        @catch (NuContinueException *exception) {
+            // do nothing, just continue with the next loop iteration
+        }
+        @catch (id exception) {
+            @throw(exception);
+        }
+    }
+    return self;
+}
+
 #ifdef LINUX
 + (NSString *) stringWithCString:(const char *) cString encoding:(NSStringEncoding) encoding
 {
@@ -282,6 +462,33 @@ extern id Nu__null;
     #endif
 }
 
+@end
+
+@implementation NSData(Nu)
+
+#ifndef IPHONE
+// Read the output of a shell command into an NSData object and return the object.
++ (NSData *) dataWithShellCommand:(NSString *) command
+{
+    NSTask *task = [NSTask new];
+    [task setLaunchPath:@"/bin/sh"];
+    #ifdef DARWIN
+    NSPipe *input = [NSPipe new];
+    [task setStandardInput:input];
+    NSPipe *output = [NSPipe new];
+    #else
+    NSPipe *input = [NSPipe pipe];
+    [task setStandardInput:input];
+    NSPipe *output = [NSPipe pipe];
+    #endif
+    [task setStandardOutput:output];
+    [task launch];
+    [[input fileHandleForWriting] writeData:[command dataUsingEncoding:NSUTF8StringEncoding]];
+    [[input fileHandleForWriting] closeFile];
+    NSData *data = [[[task standardOutput] fileHandleForReading] readDataToEndOfFile];
+    return data;
+}
+#endif
 @end
 
 @implementation NSNumber(Nu)
@@ -387,10 +594,19 @@ extern id Nu__null;
 + (double) cos: (double) x {return cos(x);}
 + (double) sin: (double) x {return sin(x);}
 + (double) sqrt: (double) x {return sqrt(x);}
++ (double) cbrt: (double) x {return cbrt(x);}
 + (double) square: (double) x {return x*x;}
 + (double) exp: (double) x {return exp(x);}
++ (double) exp2: (double) x {return exp2(x);}
 + (double) log: (double) x {return log(x);}
++ (double) log2: (double) x {return log2(x);}
++ (double) log10: (double) x {return log10(x);}
 
++ (double) floor: (double) x {return floor(x);}
++ (double) ceil: (double) x {return ceil(x);}
++ (double) round: (double) x {return round(x);}
+
++ (double) raiseNumber: (double) x toPower: (double) y {return pow(x, y);} 
 + (int) integerDivide:(int) x by:(int) y {return x / y;}
 + (int) integerMod:(int) x by:(int) y {return x % y;}
 
@@ -656,3 +872,47 @@ const char *stringValue(id object)
     return [[object stringValue] cString];
 }
 #endif
+
+@implementation NuAutomaticIvars
+
+- (id) handleUnknownMessage:(NuCell *) message withContext:(id) context
+{
+    int message_length = [message length];
+    if (message_length == 1) {
+        // try to automatically get an ivar
+        @try
+        {
+            // ivar name is the first (only) token of the message
+            return [self valueForIvar:[[message car] stringValue]];
+        }
+        @catch (id error) {
+            return [super handleUnknownMessage:message withContext:context];
+        }
+    }
+    else if (message_length == 2) {
+        // try to automatically set an ivar
+        if ([[[[message car] stringValue] substringWithRange:NSMakeRange(0,3)] isEqualToString:@"set"]) {
+            @try
+            {
+                id firstArgument = [[message car] stringValue];
+                id variableName0 = [[firstArgument substringWithRange:NSMakeRange(3,1)] lowercaseString];
+                id variableName1 = [firstArgument substringWithRange:NSMakeRange(4, [firstArgument length] - 5)];
+                [self setValue:[[[message cdr] car] evalWithContext:context]
+                    forIvar:[NSString stringWithFormat:@"%@%@", variableName0, variableName1]];
+                return nil;
+            }
+            @catch (id error) {
+                return [super handleUnknownMessage:message withContext:context];
+            }
+        }
+        else {
+            return [super handleUnknownMessage:message withContext:context];
+        }
+    }
+    else {
+        return [super handleUnknownMessage:message withContext:context];
+    }
+    return nil;
+}
+
+@end

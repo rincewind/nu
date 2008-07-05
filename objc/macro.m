@@ -179,13 +179,19 @@ extern id Nu__null;
     // save the current value of margs
     id old_margs = [calling_context objectForKey:[symbolTable symbolWithCString:"margs"]];
     // set the arguments to the special variable "margs"
-    [calling_context setObject:cdr forKey:[symbolTable symbolWithCString:"margs"]];
+    [calling_context setPossiblyNullObject:cdr forKey:[symbolTable symbolWithCString:"margs"]];
     // evaluate the body of the block in the calling context (implicit progn)
     id value = Nu__null;
 
     // if the macro contains gensyms, give them a unique prefix
-    id bodyToEvaluate = ([[self gensyms] count] == 0)
-        ? (id)body : [self body:body withGensymPrefix:[NSString stringWithFormat:@"g%ld", [NuMath random]] symbolTable:symbolTable];
+    int gensymCount = [[self gensyms] count];
+    id gensymPrefix = nil;
+    if (gensymCount > 0) {
+        gensymPrefix = [NSString stringWithFormat:@"g%ld", [NuMath random]];
+    }
+
+    id bodyToEvaluate = (gensymCount == 0)
+        ? (id)body : [self body:body withGensymPrefix:gensymPrefix symbolTable:symbolTable];
 
     // uncomment this to get the old (no gensym) behavior.
     //bodyToEvaluate = body;
@@ -201,8 +207,23 @@ extern id Nu__null;
         [calling_context removeObjectForKey:[symbolTable symbolWithCString:"margs"]];
     }
     else {
-        [calling_context setObject:old_margs forKey:[symbolTable symbolWithCString:"margs"]];
+        [calling_context setPossiblyNullObject:old_margs forKey:[symbolTable symbolWithCString:"margs"]];
     }
+    #if 0
+    // I would like to remove gensym values and symbols at the end of a macro's execution,
+    // but there is a problem with this: the gensym assignments could be used in a closure,
+    // and deleting them would cause that to break. See the testIvarAccessorMacro unit
+    // test for an example of this. So for now, the code below is disabled.
+    //
+    // remove the gensyms from the context; this also releases their assigned values
+    NSArray *gensymArray = [gensyms allObjects];
+    for (int i = 0; i < gensymCount; i++) {
+        NuSymbol *gensymBase = [gensymArray objectAtIndex:i];
+        NuSymbol *gensymSymbol = [symbolTable symbolWithString:[NSString stringWithFormat:@"%@%@", gensymPrefix, [gensymBase stringValue]]];
+        [calling_context removeObjectForKey:gensymSymbol];
+        [symbolTable removeSymbol:gensymSymbol];
+    }
+    #endif
     // NSLog(@"result is %@", value);
     return value;
 }

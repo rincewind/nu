@@ -17,7 +17,7 @@ limitations under the License.
 */
 #import "parser.h"
 #import "symbol.h"
-#import "Nu.h"
+#import "Nu/Nu.h"
 #import "extensions.h"
 #import "object.h"
 #import "objc_runtime.h"
@@ -28,8 +28,19 @@ limitations under the License.
 #import "exception.h"
 #import <unistd.h>
 #import "pcre.h"
+#import "version.h"
 
 id Nu__null = 0;
+
+bool nu_valueIsTrue(id value)
+{
+    bool result = value && (value != Nu__null);
+    if (result && nu_objectIsKindOfClass(value, [NSNumber class])) {
+        if ([value doubleValue] == 0.0)
+            result = false;
+    }
+    return result;
+}
 
 @interface NuApplication : NSObject
 {
@@ -48,12 +59,11 @@ static NuApplication *_sharedApplication = 0;
     return _sharedApplication;
 }
 
-- (void) setArgc:(int) argc argv:(const char *[])argv
+- (void) setArgc:(int) argc argv:(const char *[])argv startingAtIndex:(int) start
 {
     arguments = [[NSMutableArray alloc] init];
     int i;
-    // skip the first two.  They are usually "nush" and the script name.
-    for (i = 2; i < argc; i++) {
+    for (i = start; i < argc; i++) {
         [arguments addObject:[NSString stringWithCString:argv[i] encoding:NSUTF8StringEncoding]];
     }
 }
@@ -96,9 +106,6 @@ int NuMain(int argc, const char *argv[], const char *envp[])
     {
         NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-        // collect the command-line arguments
-        [[NuApplication sharedApplication] setArgc:argc argv:argv];
-
         // first we try to load main.nu from the application bundle.
         NSString *main_path = [[NSBundle mainBundle] pathForResource:@"main" ofType:@"nu"];
         if (main_path) {
@@ -117,9 +124,10 @@ int NuMain(int argc, const char *argv[], const char *envp[])
             NuParser *parser = [[NuParser alloc] init];
             id script, result;
             bool didSomething = false;
+            bool goInteractive = false;
             int i = 1;
             bool fileEvaluated = false;           // only evaluate one filename
-            while (i < argc) {
+            while ((i < argc) && !fileEvaluated) {
                 if (!strcmp(argv[i], "-e")) {
                     i++;
                     script = [parser parse:[NSString stringWithCString:argv[i] encoding:NSUTF8StringEncoding]];
@@ -131,28 +139,30 @@ int NuMain(int argc, const char *argv[], const char *envp[])
                     script = [parser parse:[NSString stringWithFormat:@"(load \"%s\")", argv[i]] asIfFromFilename:argv[i]];
                     result = [parser eval:script];
                 }
+                else if (!strcmp(argv[i], "-v")) {
+                    printf("Nu %s (%s)\n", NU_VERSION, NU_RELEASE_DATE);
+                }
                 else if (!strcmp(argv[i], "-i")) {
-                    [parser interact];
-                    didSomething = true;
+                    goInteractive = true;
                 }
                 else {
-                    if (!fileEvaluated) {
-                        id string = [NSString stringWithContentsOfFile:[NSString stringWithCString:argv[i] encoding:NSUTF8StringEncoding]];
-                        if (string) {
-                            id script = [parser parse:string asIfFromFilename:argv[i]];
-                            [parser eval:script];
-                            fileEvaluated = true;
-                        }
-                        else {
-                            // complain somehow. Throw an exception?
-                            NSLog(@"Error: can't open file named %s", argv[i]);
-                        }
-                        didSomething = true;
+                    // collect the command-line arguments
+                    [[NuApplication sharedApplication] setArgc:argc argv:argv startingAtIndex:i+1];
+                    id string = [NSString stringWithContentsOfFile:[NSString stringWithCString:argv[i] encoding:NSUTF8StringEncoding]];
+                    if (string) {
+                        id script = [parser parse:string asIfFromFilename:argv[i]];
+                        [parser eval:script];
+                        fileEvaluated = true;
                     }
+                    else {
+                        // complain somehow. Throw an exception?
+                        NSLog(@"Error: can't open file named %s", argv[i]);
+                    }
+                    didSomething = true;
                 }
                 i++;
             }
-            if (!didSomething)
+            if (!didSomething || goInteractive)
                 [parser interact];
             [parser release];
             [pool release];
@@ -258,23 +268,25 @@ void NuInit()
         [NSSet include: [NuClass classWithClass:[NuEnumerable class]]];
         [pool release];
 
+        [NSObject exchangeInstanceMethod:@selector(dealloc) withMethod:@selector(nuDealloc)];
+
+
         #ifdef DARWIN
+        #ifndef IPHONE
         // Copy some useful methods from NSObject to NSProxy.
         // Their implementations are identical; this avoids code duplication.
         transplant_nu_methods([NSProxy class], [NSObject class]);
-        #if defined(DARWIN) && !defined(IPHONE)
+
+        void nu_swizzleContainerClasses();
+        nu_swizzleContainerClasses();
+
         // Stop NSView from complaining when we retain alloc-ed views.
         Class NSView = NSClassFromString(@"NSView");
         [NSView exchangeInstanceMethod:@selector(retain) withMethod:@selector(nuRetain)];
-        #endif
-        // Apply swizzles to container classes to make them tolerant of nil insertions.
-        extern void nu_swizzleContainerClasses();
-        nu_swizzleContainerClasses();
 
         // Enable support for protocols in Nu.  Apple doesn't have an API for this, so we use our own.
         extern void nu_initProtocols();
         nu_initProtocols();
-
         // if you don't like making Protocol a subclass of NSObject (see nu_initProtocols), you can do this instead.
         // transplant_nu_methods([Protocol class], [NSObject class]);
 
@@ -288,6 +300,8 @@ void NuInit()
         [Nu loadNuFile:@"cocoa"         fromBundleWithIdentifier:@"nu.programming.framework" withContext:nil];
         [Nu loadNuFile:@"help"          fromBundleWithIdentifier:@"nu.programming.framework" withContext:nil];
         #endif
+        #endif
+
         #else
         [[Nu parser] parseEval:@"(load \"nu\")"];
         #endif

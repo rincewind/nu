@@ -21,6 +21,7 @@ limitations under the License.
 #import "symbol.h"
 #import "class.h"
 #import "super.h"
+#import "extensions.h"
 
 extern id Nu__null;
 
@@ -45,8 +46,8 @@ extern id Nu__null;
     context = [c mutableCopy];
     #else
     context = [[NSMutableDictionary alloc] init];
-    [context setObject:c forKey:PARENT_KEY];
-    [context setObject:[c objectForKey:SYMBOLS_KEY] forKey:SYMBOLS_KEY];
+    [context setPossiblyNullObject:c forKey:PARENT_KEY];
+    [context setPossiblyNullObject:[c objectForKey:SYMBOLS_KEY] forKey:SYMBOLS_KEY];
     #endif
     return self;
 }
@@ -100,7 +101,7 @@ extern id Nu__null;
                 [cursor setCar:value];
                 vlist = [vlist cdr];
             }
-            [evaluation_context setObject:[varargs cdr] forKey:parameter];
+            [evaluation_context setPossiblyNullObject:[varargs cdr] forKey:parameter];
             plist = [plist cdr];
             // this must be the last element in the parameter list
             if (plist != Nu__null) {
@@ -114,7 +115,7 @@ extern id Nu__null;
             if (calling_context && (calling_context != Nu__null))
                 value = [value evalWithContext:calling_context];
             //NSLog(@"setting %@ = %@", parameter, value);
-            [evaluation_context setObject:value forKey:parameter];
+            [evaluation_context setPossiblyNullObject:value forKey:parameter];
             plist = [plist cdr];
             vlist = [vlist cdr];
         }
@@ -122,9 +123,18 @@ extern id Nu__null;
     // evaluate the body of the block with the saved context (implicit progn)
     id value = Nu__null;
     id cursor = body;
-    while (cursor && (cursor != Nu__null)) {
-        value = [[cursor car] evalWithContext:evaluation_context];
-        cursor = [cursor cdr];
+    @try
+    {
+        while (cursor && (cursor != Nu__null)) {
+            value = [[cursor car] evalWithContext:evaluation_context];
+            cursor = [cursor cdr];
+        }
+    }
+    @catch (NuReturnException *exception) {
+        value = [exception value];
+    }
+    @catch (id exception) {
+        @throw(exception);
     }
     //    NSLog(@"before releasing, evaluation context %@ retain count %d", evaluation_context, [evaluation_context retainCount]);
     //    NSLog(@"before releasing, value %@ retain count %d", value, [value retainCount]);
@@ -137,6 +147,17 @@ extern id Nu__null;
 - (id) evalWithArguments:(id)cdr context:(NSMutableDictionary *)calling_context
 {
     return [self callWithArguments:cdr context:calling_context];
+}
+
+id getObjectFromContext(id context, id symbol)
+{
+    while (IS_NOT_NULL(context)) {
+        id object = [context objectForKey:symbol];
+        if (object)
+            return object;
+        context = [context objectForKey:PARENT_KEY];
+    }
+    return nil;
 }
 
 - (id) evalWithArguments:(id)cdr context:(NSMutableDictionary *)calling_context self:(id)object
@@ -158,9 +179,10 @@ extern id Nu__null;
     //    NSLog(@"after copying, evaluation context %@ retain count %d", evaluation_context, [evaluation_context retainCount]);
     if (object) {
         NuSymbolTable *symbolTable = [evaluation_context objectForKey:SYMBOLS_KEY];
-        NuClass *c = [context objectForKey:[symbolTable symbolWithString:@"_class"]];
-        [evaluation_context setObject:object forKey:[symbolTable symbolWithCString:"self"]];
-        [evaluation_context setObject:[NuSuper superWithObject:object ofClass:[c wrappedClass]] forKey:[symbolTable symbolWithCString:"super"]];
+        // look up one level for the _class value, but allow for it to be higher (in the perverse case of nested method declarations).
+        NuClass *c = getObjectFromContext([context objectForKey:PARENT_KEY], [symbolTable symbolWithString:@"_class"]);
+        [evaluation_context setPossiblyNullObject:object forKey:[symbolTable symbolWithCString:"self"]];
+        [evaluation_context setPossiblyNullObject:[NuSuper superWithObject:object ofClass:[c wrappedClass]] forKey:[symbolTable symbolWithCString:"super"]];
     }
     while (plist && (plist != Nu__null) && vlist && (vlist != Nu__null)) {
         id arg = [plist car];
@@ -168,16 +190,25 @@ extern id Nu__null;
         // we don't evaluate them here; instead we just copy them
         id value = [vlist car];
         //        NSLog(@"setting %@ = %@", arg, value);
-        [evaluation_context setObject:value forKey:arg];
+        [evaluation_context setPossiblyNullObject:value forKey:arg];
         plist = [plist cdr];
         vlist = [vlist cdr];
     }
     // evaluate the body of the block with the saved context (implicit progn)
     id value = Nu__null;
     id cursor = body;
-    while (cursor && (cursor != Nu__null)) {
-        value = [[cursor car] evalWithContext:evaluation_context];
-        cursor = [cursor cdr];
+    @try
+    {
+        while (cursor && (cursor != Nu__null)) {
+            value = [[cursor car] evalWithContext:evaluation_context];
+            cursor = [cursor cdr];
+        }
+    }
+    @catch (NuReturnException *exception) {
+        value = [exception value];
+    }
+    @catch (id exception) {
+        @throw(exception);
     }
     [value retain];
     [value autorelease];
